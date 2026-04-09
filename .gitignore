@@ -1,12 +1,33 @@
-.DS_Store
-.idea
-.ipynb_checkpoints/
-.vscode
-__pycache__/
-*.bin
-*.pkl
+# datasets / processed data (generated)
+data/**/train.bin
+data/**/val.bin
+
+# IMPORTANT: DO NOT ignore meta.pkl globally
+# (needed for tokenizer in char-level datasets)
+
+# model checkpoints
+out/
+out-*/
 *.pt
+
+# logs / outputs
+*.log
+
+# python cache
+__pycache__/
 *.pyc
-input.txt
-env/
+
+# environments
 venv/
+env/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# notebooks
+.ipynb_checkpoints/
+
+# OPTIONAL: ignore pickles only inside output folders
+out/**/*.pkl
