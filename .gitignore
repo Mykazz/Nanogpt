@@ -1,89 +1,49 @@
-# =========================
-# GENERATED RESULTS / ANALYSIS
-# =========================
-
-# analysis scripts (plots, comparisons, experiments)
+# generated experiment scripts
 analyze_*.py
 plot_*.py
 compare_*.py
+rebuild_*.py
+make_*eval*.py
+make_pure_gptq_checkpoint.py
+sweep_*.py
+run_*.sh
 
-# generated reports / graphs
+# keep your core added scripts
+!eval_metrics.py
+!sparsegpt_nanogpt.py
+!quantize_nanogpt_gptq.py
+!joint_sparsegpt_gptq_nanogpt.py
+
+# generated outputs
 *_graphs/
 *_analysis/
 *_report/
-
 compression_analysis_*/
 compression_result_graphs/
 gptq_compression_report/
 openweb_method_comparison_graphs/
 joint_tensor_size_graphs/
 
-# CSV / metrics outputs
 *.csv
-metrics_*.csv
-*analysis.csv
-*size_results.csv
-
-# logs
 *.log
-
-# =========================
-# CHECKPOINT SWEEPS / EXPERIMENT OUTPUTS
-# =========================
-
-out-*/joint_*/
-out-*/joint_*_sweep/
-out-*/joint_*_eval/
-out-*/joint_*_graphs/
-out-*/eval_dense/
-
-# large intermediate checkpoints (non-final)
-out-*/ckpt_*.pt
-
-# but KEEP base checkpoints manually if needed
-# (git will ignore all *.pt by default below)
-
-# =========================
-# PICKLES (except tokenizer metadata)
-# =========================
-
-# ignore pickles inside outputs only
-out/**/*.pkl
-
-# =========================
-# GLOBAL LARGE FILES
-# =========================
-
 *.pt
 *.bin
 
-# EXCEPTION: keep calibration files if needed
-!calib_*.pt
-
-# =========================
-# DATA (generated binaries)
-# =========================
-
-data/**/train.bin
-data/**/val.bin
-
-# keep tokenizer metadata
+# keep original/project files
 !data/**/meta.pkl
 
-# =========================
-# ENV / CACHE
-# =========================
+# output folders
+out/
+out-*/
+out*/
+out-*/joint_*/
+out-*/eval_dense/
 
+# cache/env/editor
 __pycache__/
 *.pyc
-
 venv/
 env/
-
-# =========================
-# IDE / OS
-# =========================
-
 .DS_Store
 .idea/
 .vscode/
