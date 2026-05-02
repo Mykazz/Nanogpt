@@ -1,33 +1,30 @@
 #!/usr/bin/env python3
 """
-GPTQ-style post-training quantization for nanoGPT checkpoints.
+GPTQ stiliaus post-training kvantizacija nanoGPT checkpoint failams.
 
-This version is adapted for small GPT / nanoGPT use-cases such as Shakespeare,
-while remaining close to the GPTQ paper where it matters most.
 
-Key changes relative to the earlier script:
-- true SEQUENTIAL BLOCKWISE quantization flow:
-    * quantize block 0
-    * run quantized block 0 on calibration activations
-    * use resulting activations as inputs to block 1
-    * repeat
-- block input caching, instead of full-model Hessian collection per layer
-- optional act-order
-- optional symmetric quantization
-- optional skipping of lm_head / tied weights
-- grouped stats computed cleanly at group boundary from CURRENT updated weights
-- keeps real quantized tensors + scales + zero_points
-- supports uint8 storage for 2..8 bits
-- optional packed 4-bit storage
-- includes QuantLinear runtime wrapper for deployable loading
+- tikras NUOSEKLUS BLOKINIS kvantizacijos srautas:
+    * kvantizuojamas blokas 0
+    * kalibracijos aktyvacijos praleidžiamos per kvantizuotą bloką 0
+    * gautos aktyvacijos naudojamos kaip įėjimas blokui 1
+    * kartojama toliau
+- bloko įėjimų cashinimas vietoj Hessiano rinkimo per visą modelį kiekvienam sluoksniui
+- pasirinktinis act-order
+- pasirinktinis simetrinis kvantizavimas
+- pasirinktinis lm_head / susietų svorių praleidimas
+- grupių statistikos švariai skaičiuojamos grupės pradžioje iš DABARTINIŲ atnaujintų svorių
+- išsaugomi tikri kvantizuoti tenzoriai + scales + zero_points
+- palaikomas uint8 saugojimas 2..8 bitams
+- pasirinktinis supakuotas 4-bit saugojimas
+- įtrauktas QuantLinear runtime wrapper deploy tipo įkėlimui
 
-IMPORTANT CHECKPOINT CHANGE:
-- If --keep_dequantized_state_dict is ON:
-    ckpt["model"] stores the full dequantized model state_dict
-- If --keep_dequantized_state_dict is OFF:
-    ckpt["model"] stores ONLY NON-QUANTIZED parameters
-    (embeddings, layer norms, biases, etc.)
-    and quantized linear weights are stored in ckpt["gptq_layers"]
+SVARBUS CHECKPOINT PAKEITIMAS:
+- Jei --keep_dequantized_state_dict yra ĮJUNGTAS:
+    ckpt["model"] saugo pilną dekvantizuotą modelio state_dict
+- Jei --keep_dequantized_state_dict yra IŠJUNGTAS:
+    ckpt["model"] saugo TIK NEKVANTIZUOTUS parametrus
+    (embeddings, layer norms, bias ir t. t.)
+    o kvantizuoti linear svoriai saugomi ckpt["gptq_layers"]
 """
 
 from __future__ import annotations
@@ -46,7 +43,7 @@ from model import GPT, GPTConfig
 
 
 # ============================================================
-# Checkpoint utilities
+# Checkpoint pagalbinės funkcijos
 # ============================================================
 
 def strip_orig_mod_prefix(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
@@ -127,7 +124,7 @@ def save_nanogpt_checkpoint(
 
 
 # ============================================================
-# Calibration loading
+# Kalibracijos įkėlimas
 # ============================================================
 
 def load_calibration_tokens(calib_path: str) -> torch.Tensor:
@@ -152,7 +149,7 @@ def iter_calibration_batches(tokens: torch.Tensor, batch_size: int, device: torc
 
 
 # ============================================================
-# Quantization helpers
+# Kvantizacijos pagalbinės funkcijos
 # ============================================================
 
 @dataclass
@@ -215,7 +212,7 @@ def make_quant_params_for_slice(
     qmax = (1 << bits) - 1
 
     if symmetric:
-        # Use unsigned storage but symmetric dequantization around midpoint.
+        # Naudojama unsigned saugykla, bet dekvantizacija simetriška apie vidurio tašką.
         max_abs = W_slice.abs().amax(dim=1, keepdim=True).clamp(min=1e-8)
         mid = (qmin + qmax) / 2.0
         scale = max_abs / max(mid, 1.0)
@@ -270,25 +267,25 @@ def build_current_group_slice(
     g1: int,
 ) -> torch.Tensor:
     """
-    Return current best view of a group.
-    Q_done contains dequantized columns already finalized.
-    W_work contains current updated values for not-yet-finalized columns.
+    Grąžina dabartinį geriausią grupės vaizdą.
+    Q_done turi dekvantizuotus jau užbaigtus stulpelius.
+    W_work turi dabartines atnaujintas dar neužbaigtų stulpelių reikšmes.
     """
     out = W_work[:, g0:g1].clone()
     done_mask = torch.zeros((g1 - g0,), dtype=torch.bool, device=W_work.device)
 
-    # If a column has been finalized, Q_done will differ from W_work conceptually.
-    # We detect finalized columns via NaN-free marker logic by caller, or simply overwrite
-    # after quantization in-place in W_work if desired. In this implementation Q_done is
-    # zero for unfinished columns, but that may collide with legitimate zero values.
-    # So caller should only use this function at group entry before any columns in that group
-    # are quantized, which is what we do.
-    _ = done_mask  # kept for readability / extension
+    # Jei stulpelis jau užbaigtas, Q_done konceptualiai skiriasi nuo W_work.
+    # Užbaigtus stulpelius būtų galima aptikti per specialų žymėjimą, arba tiesiog
+    # po kvantizacijos rašyti į W_work in-place. Šioje realizacijoje Q_done yra
+    # nulis neužbaigtiems stulpeliams, bet tai gali sutapti su tikra nuline reikšme.
+    # Todėl kvietėjas turėtų naudoti šią funkciją tik įeinant į grupę, kai dar nėra
+    # kvantizuotų tos grupės stulpelių — taip čia ir daroma.
+    _ = done_mask  # palikta skaitomumui / galimam išplėtimui
     return out
 
 
 # ============================================================
-# Optional packing helpers
+# Pasirinktinės pakavimo pagalbinės funkcijos
 # ============================================================
 
 def pack_4bit_rows(qweight_uint8: torch.Tensor) -> torch.Tensor:
@@ -363,7 +360,7 @@ def maybe_unpack_qweight(
 
 
 # ============================================================
-# Robust Hessian stabilization
+# Patikimas Hessiano stabilizavimas
 # ============================================================
 
 @torch.no_grad()
@@ -373,9 +370,9 @@ def stable_cholesky_inverse_info(
     max_tries: int = 8,
 ) -> Tuple[torch.Tensor, torch.Tensor, float]:
     """
-    Returns:
-        H_damped: damped Hessian
-        Hinv_chol_upper: U where H^{-1} = U^T U
+    Grąžina:
+        H_damped: prislopintas Hessianas
+        Hinv_chol_upper: U, kur H^{-1} = U^T U
         used_damp
     """
     if H.ndim != 2 or H.size(0) != H.size(1):
@@ -433,7 +430,7 @@ def stable_cholesky_inverse_info(
 
 
 # ============================================================
-# GPTQ quantization for one linear layer
+# GPTQ kvantizacija vienam linear sluoksniui
 # ============================================================
 
 @torch.no_grad()
@@ -457,11 +454,11 @@ def gptq_quantize_linear(
     H_damped, Hinv_chol_upper, used_damp = stable_cholesky_inverse_info(H, percdamp=percdamp)
     print(f"      used damping: {used_damp:.6e}")
 
-    # Reconstruct H^{-1} explicitly. This is okay for nanoGPT scale.
+    # Aiškiai atkuriamas H^{-1}. nanoGPT masteliui tai yra priimtina.
     Hinv = Hinv_chol_upper.T @ Hinv_chol_upper
     Hinv = Hinv.to(W_orig.dtype)
 
-    # Optional act-order: sort columns by descending Hessian diagonal.
+    # Pasirinktinis act-order: stulpeliai rikiuojami pagal mažėjančią Hessiano diagonalę.
     if act_order:
         perm = torch.argsort(torch.diag(H_damped), descending=True)
         invperm = torch.argsort(perm)
@@ -502,16 +499,16 @@ def gptq_quantize_linear(
             group_idx = get_group_index(global_col, cols, groupsize)
 
             # ------------------------------------------------------------
-            # CRUCIAL PART:
-            # Compute group quant params ONCE when ENTERING the group,
-            # using CURRENT updated weights for the whole group.
+            # SVARBI VIETA:
+            # Grupės kvantizacijos parametrai skaičiuojami vieną kartą įeinant į grupę,
+            # naudojant DABARTINIUS atnaujintus visos grupės svorius.
             # ------------------------------------------------------------
             if is_group_start(global_col, groupsize):
                 g0, g1 = get_group_bounds(global_col, cols, groupsize)
 
-                # Current updated group slice.
-                # At group entry, no columns in that group have yet been finalized,
-                # so W[:, g0:g1] already represents the current updated weights.
+                # Dabartinis atnaujintas grupės svorių pjūvis.
+                # Įeinant į grupę dar nėra užbaigtų tos grupės stulpelių,
+                # todėl W[:, g0:g1] jau reiškia dabartinius atnaujintus svorius.
                 W_group_current = W[:, g0:g1]
 
                 qp = make_quant_params_for_slice(
@@ -544,12 +541,12 @@ def gptq_quantize_linear(
             if i + 1 < count:
                 W1[:, i + 1:count] -= err.unsqueeze(1) @ Hinv1[i, i + 1:count].unsqueeze(0)
 
-        # Write finished block back
+        # Užbaigtas blokas įrašomas atgal
         W[:, i1:i2] = Q1
 
         # ------------------------------------------------------------
-        # CRUCIAL PART:
-        # Lazy batch-update of remaining columns, paper-style.
+        # SVARBI VIETA:
+        # Tingus likusių stulpelių paketinis atnaujinimas pagal straipsnio idėją.
         # ------------------------------------------------------------
         if i2 < cols:
             W[:, i2:cols] -= Err1 @ Hinv[i1:i2, i2:cols]
@@ -558,11 +555,11 @@ def gptq_quantize_linear(
         Q = Q[:, invperm].contiguous()
         qweight_uint8 = qweight_uint8[:, invperm].contiguous()
 
-        # Rebuild group stats in ORIGINAL column order for runtime simplicity.
-        # This sacrifices exact per-permuted-group metadata alignment but makes loading cleaner.
-        # For small nanoGPT models this is reasonable. If you want exact act-order deployment,
-        # store permutation explicitly and use it in runtime dequantization.
-        # Here we disable grouped-runtime mismatch by recomputing stats on final Q.
+        # Grupės statistika iš naujo sudaroma ORIGINALIA stulpelių tvarka runtime paprastumui.
+        # Tai paaukoja tikslų per-permuted-group metaduomenų sulygiavimą, bet įkėlimą padaro švaresnį.
+        # Mažiems nanoGPT modeliams tai yra pagrįsta. Jei reikia tikslaus act-order deploy,
+        # reikėtų saugoti permutaciją ir naudoti ją runtime dekvantizacijoje.
+        # Čia grouped-runtime neatitikimas panaikinamas perskaičiuojant statistiką iš galutinio Q.
         ngroups_orig = get_num_groups(cols, groupsize)
         scales_re = torch.zeros((rows, ngroups_orig), dtype=torch.float32, device=W.device)
         zero_re = torch.zeros((rows, ngroups_orig), dtype=torch.float32, device=W.device)
@@ -615,7 +612,7 @@ def gptq_quantize_linear(
 
 class QuantLinear(nn.Module):
     """
-    Pure-PyTorch quantized linear runtime wrapper.
+    Pure-PyTorch kvantizuoto linear sluoksnio runtime wrapper.
     """
 
     def __init__(
@@ -761,7 +758,7 @@ def convert_model_to_quant_linear(
 
 
 # ============================================================
-# Helpers for nanoGPT forward decomposition
+# Pagalbinės funkcijos nanoGPT forward išskaidymui
 # ============================================================
 
 @torch.no_grad()
@@ -799,8 +796,8 @@ def compute_hidden_before_blocks(
     device: torch.device,
 ) -> torch.Tensor:
     """
-    Compute hidden states entering transformer block 0.
-    Shape: [N, T, C]
+    Apskaičiuoja hidden states prieš transformer bloką 0.
+    Forma: [N, T, C]
     """
     tok_emb = model.transformer.wte(tokens.to(device))
     pos = torch.arange(0, tokens.size(1), dtype=torch.long, device=device)
@@ -834,7 +831,7 @@ def run_tail_from_hidden(
     device: torch.device,
 ) -> torch.Tensor:
     """
-    Runs final ln_f + lm_head from hidden states after final transformer block.
+    Paleidžia final ln_f + lm_head nuo hidden states po paskutinio transformer bloko.
     """
     autocast_enabled = device.type == "cuda"
     with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=autocast_enabled):
@@ -845,12 +842,12 @@ def run_tail_from_hidden(
 
 
 # ============================================================
-# Hessian collection from cached block inputs
+# Hessiano rinkimas iš kešuotų bloko įėjimų
 # ============================================================
 
 class HessianCollector:
     """
-    Collects H = 2 * sum X^T X for one nn.Linear layer.
+    Surenka H = 2 * sum X^T X vienam nn.Linear sluoksniui.
     """
 
     def __init__(self, layer: nn.Linear, device: torch.device, dtype: torch.dtype = torch.float64):
@@ -904,7 +901,7 @@ def collect_hessian_for_layer_from_block_inputs(
 
 
 # ============================================================
-# Layer selection
+# Sluoksnių atranka
 # ============================================================
 
 def should_quantize_layer_name(
@@ -933,7 +930,7 @@ def should_quantize_layer_name(
 
 
 # ============================================================
-# Sequential blockwise quantization driver
+# Nuoseklios blokinės kvantizacijos valdymas
 # ============================================================
 
 @torch.no_grad()
@@ -957,9 +954,9 @@ def quantize_transformer_blocks_sequentially(
     gptq_layers_out: Dict[str, Any],
 ) -> torch.Tensor:
     # ------------------------------------------------------------
-    # CRUCIAL PART:
-    # Cache activations entering block 0, then propagate through
-    # each already-quantized block to get inputs for the next block.
+    # SVARBI VIETA:
+    # Kešuojamos aktyvacijos prieš bloką 0, tada jos praleidžiamos per
+    # kiekvieną jau kvantizuotą bloką, kad būtų gauti įėjimai kitam blokui.
     # ------------------------------------------------------------
     hidden = compute_hidden_before_blocks(model, calib_tokens.to(device), device=device)
     print(f"Initial hidden cache shape before blocks: {tuple(hidden.shape)}")
@@ -1043,9 +1040,9 @@ def quantize_transformer_blocks_sequentially(
             print("      done.")
 
         # ------------------------------------------------------------
-        # CRUCIAL PART:
-        # Propagate hidden states through the NOW-QUANTIZED block.
-        # This is the most important paper-aligned fix.
+        # SVARBI VIETA:
+        # Hidden states praleidžiami per DABAR JAU KVANTIZUOTĄ bloką.
+        # Tai svarbiausias pataisymas, artimas GPTQ straipsnio eigai.
         # ------------------------------------------------------------
         hidden = run_block_on_hidden(
             block=block,
@@ -1127,12 +1124,12 @@ def quantize_nonblock_linears_after_blocks(
             batch_hidden = hidden_after_blocks[i:i + batch_size].to(device)
             with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=autocast_enabled):
                 _ = model.transformer.ln_f(batch_hidden)
-                # lm_head will be invoked only if the layer is there and the module forward is used
+                # lm_head bus iškviestas tik jei sluoksnis egzistuoja ir naudojamas module forward.
                 if name == "lm_head":
                     _ = model.lm_head(model.transformer.ln_f(batch_hidden))
                 else:
-                    # If another non-block linear exists in custom model variants,
-                    # you may need a more exact path here.
+                    # Jei custom modelio variante yra kitas non-block linear sluoksnis,
+                    # čia gali reikėti tikslesnio kelio.
                     _ = model.lm_head(model.transformer.ln_f(batch_hidden))
 
         collector.remove()
@@ -1246,7 +1243,7 @@ def quantize_model_blockwise(
 
 
 # ============================================================
-# Optional: load a quantized checkpoint into QuantLinear runtime
+# Pasirinktinis kvantizuoto checkpoint įkėlimas į QuantLinear runtime
 # ============================================================
 
 @torch.no_grad()
@@ -1335,7 +1332,7 @@ def main() -> None:
         ),
     )
 
-    # Reasonable small-model / nanoGPT options
+    # Protingi nustatymai mažiems modeliams / nanoGPT
     parser.add_argument("--act_order", action="store_true",
                         help="Sort columns by Hessian diagonal importance before GPTQ.")
     parser.add_argument("--symmetric", action="store_true",

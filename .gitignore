@@ -1,33 +1,90 @@
-# datasets / processed data (generated)
+# =========================
+# GENERATED RESULTS / ANALYSIS
+# =========================
+
+# analysis scripts (plots, comparisons, experiments)
+analyze_*.py
+plot_*.py
+compare_*.py
+
+# generated reports / graphs
+*_graphs/
+*_analysis/
+*_report/
+
+compression_analysis_*/
+compression_result_graphs/
+gptq_compression_report/
+openweb_method_comparison_graphs/
+joint_tensor_size_graphs/
+
+# CSV / metrics outputs
+*.csv
+metrics_*.csv
+*analysis.csv
+*size_results.csv
+
+# logs
+*.log
+
+# =========================
+# CHECKPOINT SWEEPS / EXPERIMENT OUTPUTS
+# =========================
+
+out-*/joint_*/
+out-*/joint_*_sweep/
+out-*/joint_*_eval/
+out-*/joint_*_graphs/
+out-*/eval_dense/
+
+# large intermediate checkpoints (non-final)
+out-*/ckpt_*.pt
+
+# but KEEP base checkpoints manually if needed
+# (git will ignore all *.pt by default below)
+
+# =========================
+# PICKLES (except tokenizer metadata)
+# =========================
+
+# ignore pickles inside outputs only
+out/**/*.pkl
+
+# =========================
+# GLOBAL LARGE FILES
+# =========================
+
+*.pt
+*.bin
+
+# EXCEPTION: keep calibration files if needed
+!calib_*.pt
+
+# =========================
+# DATA (generated binaries)
+# =========================
+
 data/**/train.bin
 data/**/val.bin
 
-# IMPORTANT: DO NOT ignore meta.pkl globally
-# (needed for tokenizer in char-level datasets)
+# keep tokenizer metadata
+!data/**/meta.pkl
 
-# model checkpoints
-out/
-out-*/
-*.pt
+# =========================
+# ENV / CACHE
+# =========================
 
-# logs / outputs
-*.log
-
-# python cache
 __pycache__/
 *.pyc
 
-# environments
 venv/
 env/
 
-# OS / editor
+# =========================
+# IDE / OS
+# =========================
+
 .DS_Store
 .idea/
 .vscode/
-
-# notebooks
 .ipynb_checkpoints/
-
-# OPTIONAL: ignore pickles only inside output folders
-out/**/*.pkl
